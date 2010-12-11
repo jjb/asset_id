@@ -101,7 +101,7 @@ module AssetID
           :access => s3_permissions,
         }.merge(cache_headers)
 
-        if gzip_types.include? mime_type
+        if gzip_types.include?(mime_type) and options[:compress]
           data = `gzip -c #{asset}`
           headers.merge!(gzip_headers)
         else
