@@ -34,12 +34,12 @@ module AssetID
         }
       }
     end
-    
-    def self.fingerprint(path)
+
+    def self.fingerprint(path, no_fp)
       path = File.join path_prefix, path unless path =~ /#{path_prefix}/
-      d = Digest::MD5.hexdigest(File.read(path))
+      d = no_fp ? '' : ('-id-' + Digest::MD5.hexdigest(File.read(path)))
       path = path.gsub(path_prefix, '')
-      File.join File.dirname(path), "#{File.basename(path, File.extname(path))}-id-#{d}#{File.extname(path)}"
+      File.join File.dirname(path), "#{File.basename(path, File.extname(path))}#{d}#{File.extname(path)}"
     end
     
   end
@@ -84,39 +84,56 @@ module AssetID
       s3_config['bucket']
     end
     
-    def self.fingerprint(path)
+    def self.fingerprint(path, no_fp=false)
       #File.join "/#{self.s3_bucket}", fingerprint(path)
-      super(path)
+      super(path, no_fp)
     end
     
     def self.upload(options={})
       connect_to_s3
       assets.each do |asset|
-        puts "asset_id: Uploading #{asset} as #{fingerprint(asset)}" if options[:debug]
+        puts "\n\n:::: #{asset}"
         mime_type = MIME::Types.of(asset).first.to_s
-        
+        puts "  mime_type: #{mime_type}"
+
         headers = {
           :content_type => mime_type,
           :access => s3_permissions,
         }.merge(cache_headers)
-        
+
         if gzip_types.include? mime_type
           data = `gzip -c #{asset}`
           headers.merge!(gzip_headers)
         else
-          data = File.read(asset)
+          data = File.read(asset)        
         end
+
+        if 'application/x-gzip' == mime_type
+          headers.merge!(gzip_headers)
+        end
+
+        # puts "headers: #{headers.inspect}" if options[:debug]
+        unless options[:dry_run]
+          if options[:upload_originals]
+            puts "Uploading #{asset} as #{fingerprint(asset, true)}" if options[:debug]
+            AWS::S3::S3Object.store(
+              fingerprint(asset, true),
+              data,
+              s3_bucket,
+              headers
+            )
+          end
         
-        puts "asset_id: headers: #{headers.inspect}" if options[:debug]
-        
-        AWS::S3::S3Object.store(
-          fingerprint(asset),
-          data,
-          s3_bucket,
-          headers
-        ) unless options[:dry_run]
+          puts "Uploading #{asset} as #{fingerprint(asset)}" if options[:debug]
+          AWS::S3::S3Object.store(
+            fingerprint(asset),
+            data,
+            s3_bucket,
+            headers
+          )
+        end
+
       end
     end
-    
   end
 end
